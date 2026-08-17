@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.models import *
 from app.schemas import *
 from app.services.auth import *
+from app.routers.account import get_current_payload
 
 auth_routers = APIRouter(
     prefix="/auth",
@@ -41,23 +42,30 @@ def user_login(login_inp: UserLoginRequest, db: Session = Depends(get_db)):
 
     try:
         token = user_login_sv(login_inp, db)
-
-        if token == "USER_NOT_EXISTS":
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Người dùng {login_inp.username} không tồn tại"
-            )
-
-        if token == "INCORRECT_PASSWORD":
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="tài khoản hoặc mật khẩu sai"
-            )
-
         return {
             "message": "đăng nhập thành công",
             "token": token
         }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Có lỗi hệ thống: {str(e)}"
+        )
+
+
+@auth_routers.post("/change-password", status_code=status.HTTP_200_OK)
+def change_password(old_password: str, new_password: str, payload: dict = Depends(get_current_payload), db: Session = Depends(get_db)):
+
+    try:
+
+        result = change_password_sv(old_password, new_password, payload, db)
+
+        if result:
+            return {
+                "message": "ĐỔI MẬT KHẨU THÀNH CÔNG"
+            }
 
     except HTTPException:
         raise

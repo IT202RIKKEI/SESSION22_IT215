@@ -1,5 +1,6 @@
 import bcrypt
 import jwt
+from fastapi import HTTPException, status
 from jwt.exceptions import InvalidTokenError, ExpiredSignatureError
 import os
 from sqlalchemy.orm import Session
@@ -11,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-SECRET_KEY = os.getenv("SECRET_KEY", "trustbank_default_secret_key_2026")
+SECRET_KEY = os.getenv("SECRET_KEY", "trustbank_super_secret_jwt_key_2026")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(
     os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
@@ -81,18 +82,18 @@ def user_login_sv(login_inp: UserLoginRequest, db: Session):
     user = db.query(UserModel).filter(
         UserModel.username == login_inp.username).first()
 
-    if not user:
-        return "USER_NOT_EXISTS"
-
-    # có thì kiểm tra mật khẩu có đúng không
-    if not verify_password(login_inp.password, user.hashed_password):
-        return "INCORRECT_PASSWORD"
+    if not user or not verify_password(login_inp.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Tên đăng nhập hoặc mật khẩu không chính xác"
+        )
 
     # đăng nhập được thì cấp token
     payload = {
-        "sub": user.id,
+        "sub": str(user.id),
         "username": user.username,
-        "role": user.role
+        "role": user.role,
+        "balance": str(user.balance)
     }
 
     token = create_access_token(payload)
@@ -116,3 +117,33 @@ def user_login_sv(login_inp: UserLoginRequest, db: Session):
 #     except InvalidTokenError:
 #         print("Lỗi: Token không hợp lệ hoặc sai chữ ký")
 #         return None
+
+
+# =============================== ĐỔI MẬT KHẨU ===============================
+def change_password_sv(old_password: str, new_password: str, payload: dict, db: Session) -> bool:
+
+    user_id = payload.get("sub")
+
+    user = db.query(UserModel).filter(UserModel.id == user_id).first()
+
+    # kiểm tra mật khẩu có khớp với mật khẩu cũ không
+
+    if not verify_password(old_password, user.hashed_password):
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Mật khẩu cũ không đúng"
+        )
+
+    # nếu đúng thì cập nhật
+
+    # hashed password mới
+    new_hashed_password = hashed_password_sv(new_password)
+
+    # cập nhật
+    user.hashed_password = new_hashed_password
+
+    db.commit()
+    db.refresh(user)
+
+    return True
